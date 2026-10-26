@@ -4463,6 +4463,16 @@ const CAT_ICON = {'جغرافيا':'🌍','إسلامي':'🕌','ثقافة عا
 const CAT_ORDER = Object.keys(CAT_ICON);
 const DIFF = {1:'سهل ★', 2:'متوسط ★★', 3:'صعب ★★★'};
 const PRESETS = ['#e5484d','#2fa46a','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#0ea5e9','#84cc16','#64748b','#a16207'];
+const COLOR_NAMES = ['الأحمر','الأخضر','الأزرق','الذهبي','البنفسجي','الوردي','الفيروزي','البرتقالي','السماوي','الليموني','الرمادي','البني'];
+// اسم اللون الأقرب من الألوان الجاهزة (يشتغل حتى مع لون مخصص من منتقي الألوان)
+function colorName(hex){
+  const rgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const c = rgb(hex); let best = 0, bd = Infinity;
+  PRESETS.forEach((p, i) => { const q = rgb(p), d = (c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2 + (c[2] - q[2]) ** 2; if (d < bd) { bd = d; best = i; } });
+  return COLOR_NAMES[best];
+}
+// الاسم تلقائي إذا كان «الفريق» + اسم لون؛ الاسم اللي كتبه المقدم بنفسه ما نغيّره
+const isAutoName = n => COLOR_NAMES.some(c => n === 'الفريق ' + c);
 const ALL_LETTERS = Object.keys(DEFAULT_BANK);
 const N = 5, KEY = 'huroof_state_v3';
 
@@ -4619,7 +4629,9 @@ function act(type, a, b){
       Object.values(S.players || {}).forEach(p => p.muteUntil = null); break;
     case 'resetScores': S.teams.r.score = S.teams.g.score = 0; S.round = 1; break;
     case 'score': S.teams[a].score = Math.max(0, S.teams[a].score + b); break;
-    case 'team': Object.assign(S.teams[a], b); break;
+    case 'team':
+      if (b.color && b.name == null && isAutoName(S.teams[a].name)) b = Object.assign({}, b, {name:'الفريق ' + colorName(b.color)});
+      Object.assign(S.teams[a], b); break;
     case 'set': S[a] = b; break;
     case 'bank': S.bank = a; S.used = {}; break;
   }
