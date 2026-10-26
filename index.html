@@ -323,6 +323,10 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
       <label class="row"><input type="checkbox" id="hSound"> الأصوات</label>
       <label class="row"><input type="checkbox" id="hShowQ"> عرض نص السؤال على شاشة العرض</label>
     </div>
+    <div class="row" style="margin-top:12px">
+      <span id="hUsed" class="status" style="font-size:15px"></span>
+      <button onclick="if(confirm('إعادة تعيين الأسئلة؟ بعدها ممكن ترجع تظهر أسئلة ظهرت قبل.'))act('resetUsed')">♻️ إعادة تعيين الأسئلة المستخدمة</button>
+    </div>
   </details>
 
   <details class="box">
@@ -4540,14 +4544,21 @@ function pickQuestion(letter, exclude, diff){
   const idx = list.map((_, k) => k).filter(k => k !== exclude);
   const catOk = k => !S.cats || S.cats.includes(list[k].c);
   const dOk = k => diff ? list[k].d === diff : S.diffs.includes(list[k].d);
-  let pool = idx.filter(k => catOk(k) && dOk(k)), relaxed = false;
-  if (!pool.length) { relaxed = true; pool = idx.filter(dOk); }
-  if (!pool.length) pool = idx.filter(catOk);
-  if (!pool.length) pool = idx.length ? idx : [0];
-  const used = S.used[letter] || [], fresh = pool.filter(k => !used.includes(k));
-  const from = fresh.length ? fresh : pool, k = from[Math.floor(Math.random() * from.length)];
-  S.used[letter] = (fresh.length ? used : used.filter(u => !pool.includes(u))).concat(k);
-  return Object.assign({}, list[k], {k, relaxed});
+  // الأسئلة اللي ظهرت ما تتكرر لين يسوي المقدم «إعادة تعيين الأسئلة»
+  const used = new Set(S.used[letter] || []);
+  const tiers = [k => catOk(k) && dOk(k), dOk, catOk, () => true];
+  let k = null, relaxed = false, repeat = false;
+  for (let i = 0; i < tiers.length && k === null; i++) {
+    const pool = idx.filter(x => tiers[i](x) && !used.has(x));
+    if (pool.length) { k = pool[Math.floor(Math.random() * pool.length)]; relaxed = i > 0; }
+  }
+  if (k === null) { // خلصت كل أسئلة هالحرف
+    repeat = true;
+    const pool = idx.filter(x => catOk(x) && dOk(x)).length ? idx.filter(x => catOk(x) && dOk(x)) : idx.length ? idx : [0];
+    k = pool[Math.floor(Math.random() * pool.length)];
+  }
+  used.add(k); S.used[letter] = [...used];
+  return Object.assign({}, list[k], {k, relaxed, repeat});
 }
 function neighbors(i){
   const r = Math.floor(i / N), c = i % N;
@@ -4567,7 +4578,7 @@ function winPath(t){
   }
   return null;
 }
-function setQ(c, p){ Object.assign(c, {q:p.q, a:p.a, cat:p.c, d:p.d, k:p.k, relaxed:p.relaxed, show:false, showQ:false, timerEnd:S.autoTimer ? Date.now() + S.timerSec * 1000 : null,
+function setQ(c, p){ Object.assign(c, {q:p.q, a:p.a, cat:p.c, d:p.d, k:p.k, relaxed:p.relaxed, repeat:p.repeat, show:false, showQ:false, timerEnd:S.autoTimer ? Date.now() + S.timerSec * 1000 : null,
   buzzOpen:S.autoBuzz !== false, buzz:null, turn:null}); }
 const other = t => t === 'r' ? 'g' : 'r';
 const isMuted = pid => { const p = S.players && S.players[pid]; return !!p && p.muteUntil != null && p.muteUntil >= (S.qSeq || 0); };
@@ -4666,6 +4677,7 @@ function act(type, a, b){
       Object.assign(S.teams[a], b); break;
     case 'set': S[a] = b; break;
     case 'bank': S.bank = a; S.used = {}; break;
+    case 'resetUsed': S.used = {}; S.toast = null; break;
   }
   commit();
 }
@@ -4818,7 +4830,8 @@ function renderHost(t, c){
   drawBoard($('hBoard')); animatedSeq = S.capSeq;
   $('hQ').innerHTML = (c && c.turn ? buzzBar(c, 'hbcd').replace('buzzbar', 'hbuzz') : c && c.buzzOpen ? `<div class="hbuzz open">🔔 الضغط مفتوح للاعبين</div>` : '') + (S.winner ? `<div class="empty">🏆 فاز ${esc(t[S.winner].name)}<br>اضغط «جولة جديدة»</div>`
     : c ? `<div class="row" style="justify-content:space-between"><div class="row"><div class="hl">${esc(c.letter)}</div>${chips(c)}</div><b id="htnum" style="font-size:22px"></b></div>
-           ${c.relaxed ? '<div class="warn">⚠ ما فيه سؤال يطابق الفئات المختارة لهذا الحرف، فاخترت من فئة ثانية</div>' : ''}
+           ${c.repeat ? '<div class="warn">♻️ خلصت كل أسئلة هالحرف، فهذا سؤال مكرر. سوّ «إعادة تعيين الأسئلة» من الإعدادات أو أضف أسئلة.</div>'
+             : c.relaxed ? '<div class="warn">⚠ خلصت أسئلة الفئات أو الصعوبة المختارة لهالحرف، فاخترت سؤال من فئة ثانية</div>' : ''}
            <div class="lab" style="margin-top:10px">السؤال</div><div class="q">${esc(c.q)}</div>
            <div class="lab" style="margin-top:8px">الإجابة ${c.show ? '(ظاهرة للجمهور 👁)' : '(مخفية عن الجمهور)'}</div><div class="a">${esc(c.a)}</div>`
     : `<div class="empty">بانتظار اختيار حرف…</div>`);
@@ -4836,9 +4849,15 @@ function renderHost(t, c){
   if (document.activeElement !== $('hTurn')) $('hTurn').value = S.turnSec || 10;
   $('hAutoBuzz').checked = S.autoBuzz !== false; $('hMiniQR').checked = S.miniQR !== false;
   if (document.activeElement !== $('hBase')) $('hBase').value = S.baseUrl || '';
-  renderSettings();
+  renderSettings(); renderUsed();
 }
 let settingsSig = null;
+function renderUsed(total){
+  if (total == null) { total = 0; Object.values(S.bank).forEach(l => total += l.length); }
+  let u = 0; Object.values(S.used || {}).forEach(l => u += l.length);
+  const low = ALL_LETTERS.filter(L => (S.bank[L] || []).length && (S.used[L] || []).length >= (S.bank[L] || []).length);
+  $('hUsed').innerHTML = `📊 ظهر ${u} سؤال من ${total}، والباقي ${total - u}` + (low.length ? ` · <span style="color:#ffbe55">خلصت أسئلة: ${low.join(' ')}</span>` : '');
+}
 function renderSettings(){
   const cats = allCats(), sig = JSON.stringify([S.teams, S.cats, S.diffs, cats]);
   if (sig === settingsSig || document.activeElement.closest && document.activeElement.closest('#colorsBox')) return;
@@ -4867,6 +4886,7 @@ function renderSettings(){
   $('catList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
   let n = 0; Object.values(S.bank).forEach(l => n += l.length);
   $('bankStat').textContent = `المجموع: ${n} سؤال`;
+  renderUsed(n);
 }
 
 // ================= المؤقت والأصوات =================
