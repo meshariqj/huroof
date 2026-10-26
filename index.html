@@ -291,7 +291,8 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
     <div id="hBaseWarn"></div>
     <div class="plist" id="hPlayers" style="margin-top:12px"></div>
     <div class="row" style="margin-top:10px">
-      <label class="row">وقت الإجابة بعد الضغط (ثانية) <input id="hAns" type="number" min="3" max="60" style="width:80px"></label>
+      <label class="row">وقت أول من يضغط (ثانية) <input id="hAns" type="number" min="2" max="60" style="width:70px"></label>
+      <label class="row">وقت الفريق الثاني بعد الخطأ (ثانية) <input id="hTurn" type="number" min="3" max="90" style="width:70px"></label>
       <label class="row"><input type="checkbox" id="hAutoBuzz"> افتح الضغط تلقائيًا مع ظهور السؤال</label>
       <button onclick="if(confirm('حذف كل اللاعبين؟'))act('clearPlayers')">🗑 حذف كل اللاعبين</button>
     </div>
@@ -4495,7 +4496,7 @@ function freshState(){
     teams:{ r:{name:'الفريق الأحمر', score:0, color:'#e5484d'}, g:{name:'الفريق الأخضر', score:0, color:'#2fa46a'} },
     winner:null, winPath:null, history:[], capSeq:0, lastCap:null,
     timerSec:20, autoTimer:false, sound:true, cats:null, diffs:[1,2,3], bank:DEFAULT_BANK,
-    room:null, players:{}, qSeq:0, answerSec:10, autoBuzz:true, showJoin:false, miniQR:true, baseUrl:'',
+    room:null, players:{}, qSeq:0, firstSec:5, turnSec:10, autoBuzz:true, showJoin:false, miniQR:true, baseUrl:'',
     tokens:{r:0, g:0}, streak:{team:null, n:0}, toast:null };
 }
 function load(){ try { return JSON.parse(localStorage.getItem(KEY)); } catch(e){ return null; } }
@@ -4587,14 +4588,21 @@ function act(type, a, b){
     }
     case 'buzz': {
       const pl = S.players[a];
-      if (!c || !c.buzzOpen || c.buzz || !pl || isMuted(a)) return;
+      if (!c || !pl || isMuted(a)) return;
+      // بعد الخطأ: الفريق الثاني يتشاور، وأول واحد منهم يضغط هو اللي يجاوب (والوقت مستمر)
+      if (c.turn && c.turn.n > 1) {
+        if (c.turn.who || pl.team !== c.turn.team || now > c.turn.end) return;
+        c.turn.who = {pid:a, name:pl.name};
+        break;
+      }
+      if (!c.buzzOpen || c.buzz) return;
       c.buzz = {pid:a, name:pl.name, team:pl.team}; c.buzzOpen = false;
-      c.turn = {team:pl.team, end:now + (S.answerSec || 10) * 1000, n:1};
+      c.turn = {team:pl.team, end:now + (S.firstSec || 5) * 1000, n:1};
       break;
     }
     case 'wrong':
       if (!c || !c.turn) return;
-      c.turn = {team:other(c.turn.team), end:now + (S.answerSec || 10) * 1000, n:c.turn.n + 1};
+      c.turn = {team:other(c.turn.team), end:now + (S.turnSec || 10) * 1000, n:c.turn.n + 1, who:null};
       break;
     case 'openBuzz': if (!c) return; Object.assign(c, {buzzOpen:true, buzz:null, turn:null}); break;
     case 'join': {
@@ -4741,6 +4749,7 @@ function renderScreen(t, c){
     const key = [c.i, c.k, c.show, S.showQ, c.showQ, c.timerEnd, c.buzzOpen, JSON.stringify(c.turn), mutedNames.join(',')].join('|');
     const bn = $('sBanner');
     if (prevQ !== key) {
+      if (c.turn && c.turn.who && !(prevTurn && prevTurn.who)) { tone(880, .12); tone(1320, .25, .1); }
       if (c.turn && (!prevTurn || prevTurn.n !== c.turn.n || prevTurn.end !== c.turn.end)) { if (c.turn.n === 1) { tone(880, .12); tone(1320, .25, .1); } else { tone(200, .35, 0, 'square', .15); } }
       prevTurn = c.turn;
       bn.innerHTML = `${buzzBar(c, 'bcd')}
@@ -4772,7 +4781,8 @@ let prevTurn = null;
 function buzzBar(c, cdId){
   if (!c.turn) return '';
   const tn = c.turn.team === 'r' ? 1 : 2, tname = esc(S.teams[c.turn.team].name);
-  const head = c.turn.n === 1 && c.buzz ? `🔔 ${esc(c.buzz.name)} <small>${tname}</small>` : `❌ خطأ · الدور: ${tname}`;
+  const head = c.turn.n === 1 && c.buzz ? `🔔 ${esc(c.buzz.name)} <small>${tname}</small>`
+    : c.turn.who ? `🎤 ${esc(c.turn.who.name)} يجاوب <small>${tname}</small>` : `❌ خطأ · الدور: ${tname} <small>تشاوروا واضغطوا</small>`;
   return `<div class="buzzbar t${tn}">${head} <span class="cd" id="${cdId}"></span></div>`;
 }
 function renderHost(t, c){
@@ -4797,7 +4807,8 @@ function renderHost(t, c){
   renderHubInfo();
   if (document.activeElement !== $('hTimer')) $('hTimer').value = S.timerSec;
   $('hAuto').checked = !!S.autoTimer; $('hSound').checked = S.sound !== false; $('hShowQ').checked = !!S.showQ;
-  if (document.activeElement !== $('hAns')) $('hAns').value = S.answerSec || 10;
+  if (document.activeElement !== $('hAns')) $('hAns').value = S.firstSec || 5;
+  if (document.activeElement !== $('hTurn')) $('hTurn').value = S.turnSec || 10;
   $('hAutoBuzz').checked = S.autoBuzz !== false; $('hMiniQR').checked = S.miniQR !== false;
   if (document.activeElement !== $('hBase')) $('hBase').value = S.baseUrl || '';
   renderSettings();
@@ -4986,7 +4997,7 @@ function playerView(pid){
     teams:{r:{name:S.teams.r.name, color:S.teams.r.color}, g:{name:S.teams.g.name, color:S.teams.g.color}},
     tokens:S.tokens, winner:S.winner,
     q:c ? {letter:c.letter, open:!!c.buzzOpen, buzz:c.buzz ? {name:c.buzz.name, team:c.buzz.team, me:c.buzz.pid === pid} : null,
-      turn:c.turn ? {team:c.turn.team, n:c.turn.n, left:Math.max(0, c.turn.end - Date.now())} : null} : null,
+      turn:c.turn ? {team:c.turn.team, n:c.turn.n, left:Math.max(0, c.turn.end - Date.now()), who:c.turn.who ? {name:c.turn.who.name, me:c.turn.who.pid === pid} : null} : null} : null,
     opponents:p && S.tokens[p.team] > 0 ? teamPlayers(other(p.team)).filter(([id]) => !isMuted(id)).map(([id, o]) => ({id, name:o.name})) : []};
 }
 function pushPlayers(){
@@ -5062,7 +5073,10 @@ function renderPlayer(){
   if (PV.winner) { label = '🏆'; msg = `فاز ${esc(T[PV.winner].name)}!`; }
   else if (me.muted) { label = '🤫'; msg = 'مسكَّت هالسؤال'; }
   else if (q && q.buzz && q.buzz.me && q.turn && q.turn.n === 1) { label = '🎤 جاوب!'; isMe = true; msg = 'أنت أول من ضغط'; }
-  else if (q && q.turn) { label = q.turn.team === me.team ? '🟢 دوركم' : '⛔ دور الخصم'; msg = q.buzz && q.turn.n === 1 ? `${esc(q.buzz.name)} ضغط أول` : (q.turn.team === me.team ? 'الخصم غلط، جاوبوا!' : ''); }
+  else if (q && q.turn && q.turn.n > 1 && q.turn.who) { const mine = q.turn.team === me.team;
+    label = q.turn.who.me ? '🎤 جاوب!' : mine ? '🟢 دوركم' : '⛔ دور الخصم'; isMe = q.turn.who.me; msg = q.turn.who.me ? 'أنت اللي تجاوب' : `${esc(q.turn.who.name)} يجاوب`; }
+  else if (q && q.turn && q.turn.n > 1 && q.turn.team === me.team) { label = pSent ? '…' : 'اضغط وجاوب!'; live = !pSent; dis = pSent; msg = 'الخصم غلط! تشاوروا، واللي بيجاوب يضغط'; }
+  else if (q && q.turn) { label = q.turn.team === me.team ? '🟢 دوركم' : '⛔ دور الخصم'; msg = q.buzz && q.turn.n === 1 ? `${esc(q.buzz.name)} ضغط أول` : 'الخصم يتشاور'; }
   else if (q && q.open) { label = pSent ? '…' : 'اضغط!'; live = !pSent; dis = pSent; }
   else if (q) { label = '⏳'; msg = 'انتظر فتح الضغط'; }
   const mute = PV.opponents && PV.opponents.length ? `<div class="pmute"><b>🤫 فريقكم عنده ${PV.tokens[me.team]} إسكات! اختر لاعب من الخصم تسكّته:</b>
@@ -5085,7 +5099,8 @@ function pJoin(team){
 function pEdit(){ pEditing = true; $('pBody').dataset.mode = ''; renderPlayer(); }
 function pBuzz(e){
   e.preventDefault();
-  if (!PV || !PV.q || !PV.q.open || pSent) return;
+  const q = PV && PV.q, canTurn = q && q.turn && q.turn.n > 1 && !q.turn.who && PV.me && q.turn.team === PV.me.team;
+  if (!q || !(q.open || canTurn) || pSent) return;
   if (pSend({t:'buzz'})) { pSent = true; try { navigator.vibrate && navigator.vibrate(60); } catch(x){} renderPlayer(); }
 }
 function pMute(target){ if (confirm('تأكيد إسكات هذا اللاعب؟')) pSend({t:'mute', target}); }
@@ -5097,7 +5112,8 @@ if (VIEW !== 'player') $(VIEW === 'host' ? 'hBoard' : 'sBoard').addEventListener
 if (VIEW === 'screen') { startHub(); setInterval(pingHost, 2000); setInterval(() => { if (S.cur && S.cur.turn) pushPlayers(); }, 3000); }
 if (VIEW === 'host') {
   setInterval(renderHubInfo, 2000);
-  $('hAns').onchange = e => act('set', 'answerSec', Math.min(60, Math.max(3, +e.target.value || 10)));
+  $('hAns').onchange = e => act('set', 'firstSec', Math.min(60, Math.max(2, +e.target.value || 5)));
+  $('hTurn').onchange = e => act('set', 'turnSec', Math.min(90, Math.max(3, +e.target.value || 10)));
   $('hAutoBuzz').onchange = e => act('set', 'autoBuzz', e.target.checked);
   $('hMiniQR').onchange = e => act('set', 'miniQR', e.target.checked);
   $('aL').innerHTML = ALL_LETTERS.map(l => `<option>${l}</option>`).join('');
