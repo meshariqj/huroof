@@ -214,6 +214,7 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
 .pbig.me{filter:none!important;border-color:var(--gold);box-shadow:0 0 0 10px rgba(255,216,77,.35),0 14px 0 rgba(0,0,0,.35)}
 .pmsg{font-size:22px;font-weight:800;min-height:1.6em}
 .pcd{font-size:56px;font-weight:900;line-height:1}
+.preveal{border-radius:24px;padding:40px 16px;animation:pop .5s cubic-bezier(.3,1.6,.5,1);box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .pmute{background:rgba(255,216,77,.1);border:2px dashed var(--gold);border-radius:16px;padding:12px}
 .pmute b{display:block;margin-bottom:8px;font-size:18px}
 .pmute button{margin:4px}
@@ -289,6 +290,12 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
       <button onclick="act('set','baseUrl',$('hBase').value.trim())">حفظ الرابط</button>
     </div>
     <div id="hBaseWarn"></div>
+    <div class="row" style="margin-top:12px">
+      <b>طريقة دخول اللاعبين:</b>
+      <label class="row"><input type="radio" name="jm" value="pick" id="jmPick"> الفرق محددة: اللاعب يختار فريقه</label>
+      <label class="row"><input type="radio" name="jm" value="auto" id="jmAuto"> نحتاج توزيع: يسجّل اسمه وأنا أوزّعهم</label>
+    </div>
+    <div id="hWaiting"></div>
     <div class="plist" id="hPlayers" style="margin-top:12px"></div>
     <div class="row" style="margin-top:10px">
       <label class="row">وقت أول من يضغط (ثانية) <input id="hAns" type="number" min="2" max="60" style="width:70px"></label>
@@ -4496,7 +4503,7 @@ function freshState(){
     teams:{ r:{name:'الفريق الأحمر', score:0, color:'#e5484d'}, g:{name:'الفريق الأخضر', score:0, color:'#2fa46a'} },
     winner:null, winPath:null, history:[], capSeq:0, lastCap:null,
     timerSec:20, autoTimer:false, sound:true, cats:null, diffs:[1,2,3], bank:DEFAULT_BANK,
-    room:null, players:{}, qSeq:0, firstSec:5, turnSec:10, autoBuzz:true, showJoin:false, miniQR:true, baseUrl:'',
+    room:null, players:{}, qSeq:0, firstSec:5, turnSec:10, joinMode:'pick', autoBuzz:true, showJoin:false, miniQR:true, baseUrl:'',
     tokens:{r:0, g:0}, streak:{team:null, n:0}, toast:null };
 }
 function load(){ try { return JSON.parse(localStorage.getItem(KEY)); } catch(e){ return null; } }
@@ -4565,6 +4572,8 @@ function setQ(c, p){ Object.assign(c, {q:p.q, a:p.a, cat:p.c, d:p.d, k:p.k, rela
 const other = t => t === 'r' ? 'g' : 'r';
 const isMuted = pid => { const p = S.players && S.players[pid]; return !!p && p.muteUntil != null && p.muteUntil >= (S.qSeq || 0); };
 const teamPlayers = t => Object.entries(S.players || {}).filter(([, p]) => p.team === t);
+const waitingPlayers = () => Object.entries(S.players || {}).filter(([, p]) => !p.team);
+function smallerTeam(){ const nr = teamPlayers('r').length, ng = teamPlayers('g').length; return nr === ng ? (Math.random() < .5 ? 'r' : 'g') : nr < ng ? 'r' : 'g'; }
 function act(type, a, b){
   // المقدم يرسل الأوامر لشاشة العرض إذا كانت مفتوحة، لأنها مركز الاتصال مع اللاعبين
   if (VIEW === 'host' && Date.now() - lastScreen < 5000) { send({type:'act', args:[type, a, b]}); return; }
@@ -4588,7 +4597,7 @@ function act(type, a, b){
     }
     case 'buzz': {
       const pl = S.players[a];
-      if (!c || !pl || isMuted(a)) return;
+      if (!c || !pl || !pl.team || isMuted(a)) return;
       // بعد الخطأ: الفريق الثاني يتشاور، وأول واحد منهم يضغط هو اللي يجاوب (والوقت مستمر)
       if (c.turn && c.turn.n > 1) {
         if (c.turn.who || pl.team !== c.turn.team || now > c.turn.end) return;
@@ -4606,14 +4615,27 @@ function act(type, a, b){
       break;
     case 'openBuzz': if (!c) return; Object.assign(c, {buzzOpen:true, buzz:null, turn:null}); break;
     case 'join': {
-      let t = b.team;
-      if (t !== 'r' && t !== 'g') { const nr = teamPlayers('r').length, ng = teamPlayers('g').length; t = nr === ng ? (Math.random() < .5 ? 'r' : 'g') : nr < ng ? 'r' : 'g'; }
       const old = S.players[a] || {};
+      // وضع «نحتاج توزيع»: اللاعب يسجل اسمه بس، ويبقى بدون فريق لين يوزّع المقدم
+      let t = S.joinMode === 'auto' ? (old.team || null) : b.team;
+      if (S.joinMode !== 'auto' && t !== 'r' && t !== 'g') t = smallerTeam();
       S.players[a] = {name:String(b.name || 'لاعب').slice(0, 24), team:t, muteUntil:old.muteUntil ?? null, joined:old.joined || now};
       break;
     }
     case 'leave': case 'kick': if (!S.players[a]) return; delete S.players[a]; break;
-    case 'moveTeam': if (!S.players[a]) return; S.players[a].team = other(S.players[a].team); break;
+    case 'moveTeam': if (!S.players[a]) return; S.players[a].team = S.players[a].team ? other(S.players[a].team) : smallerTeam(); break;
+    case 'distribute': { // a = true: أعد توزيع الكل من جديد
+      const ids = Object.keys(S.players).filter(id => a || !S.players[id].team);
+      if (!ids.length) return;
+      ids.forEach(id => S.players[id].team = null);
+      shuffle(ids).forEach(id => S.players[id].team = smallerTeam());
+      S.toast = {text:'🎲 تم توزيع اللاعبين على الفريقين!', at:now};
+      break;
+    }
+    case 'turnExpired': // خلص وقت الفريق الثاني بدون ما أحد يضغط: الضغط ينفتح للكل
+      if (!c || !c.turn || c.turn.n < 2 || c.turn.who || now < c.turn.end) return;
+      Object.assign(c, {turn:null, buzz:null, buzzOpen:true});
+      break;
     case 'clearPlayers': S.players = {}; break;
     case 'mute': { // a = لاعب الفريق اللي عنده الإسكات أو 'r'/'g' من المقدم، b = اللاعب المستهدف
       const team = a === 'r' || a === 'g' ? a : S.players[a] && S.players[a].team, tg = S.players[b];
@@ -4763,7 +4785,7 @@ function renderScreen(t, c){
     bn.classList.toggle('hidden', !bn.textContent.trim());
   } else if (S.showJoin) {
     prevQ = null; $('sBanner').classList.add('hidden'); ov.classList.remove('full');
-    const key = 'join|' + joinUrl() + '|' + JSON.stringify(S.players) + JSON.stringify(S.teams);
+    const key = 'join|' + S.joinMode + joinUrl() + '|' + JSON.stringify(S.players) + JSON.stringify(S.teams);
     if (ov.dataset.k !== key) {
       ov.dataset.k = key;
       ov.onclick = null;
@@ -4772,7 +4794,10 @@ function renderScreen(t, c){
         <div class="qrbox">${S.room ? qrSvg(joinUrl()) : '<div style="color:#1b2350;padding:40px">جاري تجهيز الغرفة…</div>'}</div>
         <div><h2>📱 امسح الباركود وانضم</h2><div class="url">${esc(joinUrl())}</div>
         ${isLocalFile() && !S.baseUrl ? '<div class="warnbox">⚠ الملف مفتوح من جهازك، والجوالات ما تقدر تفتح هالرابط. ارفع الملف على الإنترنت وحط رابطه في إعدادات المقدم.</div>' : ''}
-        <div class="jteams">${col('r', 1)}${col('g', 2)}</div></div></div></div>`;
+        ${S.joinMode === 'auto' && !teamPlayers('r').length && !teamPlayers('g').length
+          ? `<div class="jteam" style="margin-top:18px;border:2px dashed var(--gold);background:rgba(255,216,77,.08)"><b>📝 المسجلين (${waitingPlayers().length}) · التوزيع على الفرق بعد ما يكتمل العدد</b>${waitingPlayers().map(([, p]) => `<span>${esc(p.name)}</span>`).join('')}</div>`
+          : `<div class="jteams">${col('r', 1)}${col('g', 2)}</div>${waitingPlayers().length ? `<div class="jteam" style="margin-top:10px;border:2px dashed var(--gold)"><b>⏳ بانتظار التوزيع</b>${waitingPlayers().map(([, p]) => `<span>${esc(p.name)}</span>`).join('')}</div>` : ''}`}
+        </div></div></div>`;
     }
     ov.classList.remove('hidden');
   } else { ov.classList.add('hidden'); ov.classList.remove('full'); prevQ = null; ov.dataset.k = ''; $('sBanner').classList.add('hidden'); stopFireworksIfDone(); }
@@ -4852,6 +4877,7 @@ function tick(){
     const sec = Math.max(0, Math.ceil((c.turn.end - Date.now()) / 1000));
     ['bcd', 'hbcd'].forEach(id => { const el = $(id); if (el) el.textContent = sec ? sec : '⌛'; });
     if (!sec && VIEW === 'screen' && beepedTurn !== c.turn.end) { beepedTurn = c.turn.end; tone(330, .5); }
+    if (!sec && VIEW === 'screen' && c.turn.n > 1 && !c.turn.who) act('turnExpired');
   }
   if (VIEW === 'player') tickPlayer();
   if (!c || !c.timerEnd) return;
@@ -4995,7 +5021,7 @@ function playerView(pid){
   const p = S.players[pid], c = S.cur;
   return {t:'view', me:p ? {name:p.name, team:p.team, muted:isMuted(pid)} : null,
     teams:{r:{name:S.teams.r.name, color:S.teams.r.color}, g:{name:S.teams.g.name, color:S.teams.g.color}},
-    tokens:S.tokens, winner:S.winner,
+    tokens:S.tokens, winner:S.winner, joinMode:S.joinMode || 'pick',
     q:c ? {letter:c.letter, open:!!c.buzzOpen, buzz:c.buzz ? {name:c.buzz.name, team:c.buzz.team, me:c.buzz.pid === pid} : null,
       turn:c.turn ? {team:c.turn.team, n:c.turn.n, left:Math.max(0, c.turn.end - Date.now()), who:c.turn.who ? {name:c.turn.who.name, me:c.turn.who.pid === pid} : null} : null} : null,
     opponents:p && S.tokens[p.team] > 0 ? teamPlayers(other(p.team)).filter(([id]) => !isMuted(id)).map(([id, o]) => ({id, name:o.name})) : []};
@@ -5015,6 +5041,13 @@ function renderPlayersPanel(){
   $('hJoinUrl').textContent = S.room ? joinUrl() : '(افتح شاشة العرض أولًا)';
   $('hBaseWarn').innerHTML = isLocalFile() && !S.baseUrl ? '<div class="warnbox">⚠ اللعبة مفتوحة كملف من جهازك. عشان الجوالات تفتح رابط الانضمام لازم ترفع الملف على رابط إنترنت وتحطه فوق.</div>' : '';
   const online = new Set((hubInfo && hubInfo.online) || []);
+  $('jmPick').checked = S.joinMode !== 'auto'; $('jmAuto').checked = S.joinMode === 'auto';
+  const wait = waitingPlayers(), np = Object.keys(S.players || {}).length;
+  $('hWaiting').innerHTML = (wait.length || S.joinMode === 'auto') ? `<div class="box" style="margin-top:10px;background:var(--panel2)">
+      <b>⏳ بانتظار التوزيع (${wait.length})</b>
+      <div style="margin:8px 0">${wait.map(([id, p]) => `<span class="chip" style="font-size:15px;margin:3px"><i class="dot ${online.has(id) ? 'on' : ''}"></i> ${esc(p.name)} <a href="#" onclick="act('kick','${id}');return false" style="color:#ff7a95;text-decoration:none">✕</a></span>`).join('') || '<span class="status">ما فيه أحد ينتظر</span>'}</div>
+      <div class="row"><button class="bY" ${wait.length ? '' : 'disabled'} onclick="act('distribute')">🎲 وزّعهم عشوائي الحين</button>
+      <button ${np ? '' : 'disabled'} onclick="if(confirm('إعادة توزيع كل اللاعبين من جديد؟'))act('distribute',true)">🔀 أعد توزيع الكل</button></div></div>` : '';
   $('hPlayers').innerHTML = ['r', 'g'].map((k, n) => {
     const opp = teamPlayers(other(k)).filter(([id]) => !isMuted(id));
     return `<div class="col t${n + 1}"><b>${esc(S.teams[k].name)} (${teamPlayers(k).length})</b>
@@ -5026,7 +5059,7 @@ function renderPlayersPanel(){
 }
 
 // ================= واجهة اللاعب =================
-let PV = null, pConn = null, pPeer = null, pid = null, pTurnEnd = 0, pSent = false, pEditing = false;
+let PV = null, pConn = null, pPeer = null, pid = null, pTurnEnd = 0, pSent = false, pEditing = false, pLastTeam = undefined, pReveal = 0, pRevealT = null;
 function startPlayer(){
   try { pid = localStorage.getItem('huroof_pid'); } catch(e){}
   if (!pid) { pid = rnd(10); try { localStorage.setItem('huroof_pid', pid); } catch(e){} }
@@ -5054,17 +5087,43 @@ function renderPlayer(){
   if (!PV) { body.innerHTML = ''; return; }
   const T = PV.teams;
   document.documentElement.style.setProperty('--t1', T.r.color); document.documentElement.style.setProperty('--t2', T.g.color);
-  if (!PV.me || pEditing) {
-    if (body.dataset.mode === 'join') return;
-    body.dataset.mode = 'join';
+  if (!PV.me || pEditing || (!PV.me.team && PV.joinMode !== 'auto')) {
+    const mode = 'join-' + PV.joinMode + JSON.stringify(T);
+    if (body.dataset.mode === mode) return;
+    body.dataset.mode = mode;
     let saved = ''; try { saved = localStorage.getItem('huroof_name') || ''; } catch(e){}
-    body.innerHTML = `<div class="pjoin box"><div class="status" style="margin-bottom:8px">اكتب اسمك واختر فريقك</div>
+    if (pEditing && PV.me) saved = PV.me.name;
+    const auto = PV.joinMode === 'auto';
+    body.innerHTML = `<div class="pjoin box"><div class="status" style="margin-bottom:8px">${auto ? 'اكتب اسمك وسجّل، والتوزيع على الفرق بيصير بعدين' : 'اكتب اسمك واختر فريقك'}</div>
       <input id="pName" maxlength="24" placeholder="اسمك" value="${esc(saved)}">
-      <div class="tb">
+      <div class="tb">${auto ? `<button class="bY" onclick="pJoin()">✅ سجّل</button>` : `
         <button style="background:${T.r.color};color:${inkFor(T.r.color)}" onclick="pJoin('r')">${esc(T.r.name)}</button>
-        <button style="background:${T.g.color};color:${inkFor(T.g.color)}" onclick="pJoin('g')">${esc(T.g.name)}</button>
-        <button onclick="pJoin('auto')">🎲 وزّعني على فريق</button>
+        <button style="background:${T.g.color};color:${inkFor(T.g.color)}" onclick="pJoin('g')">${esc(T.g.name)}</button>`}
       </div></div>`;
+    return;
+  }
+  if (!PV.me.team) {
+    pLastTeam = null;
+    if (body.dataset.mode === 'wait') return;
+    body.dataset.mode = 'wait';
+    body.innerHTML = `<div class="box" style="padding:30px 16px"><div style="font-size:60px">⏳</div>
+      <div style="font-size:24px;font-weight:900;margin:10px 0">تم تسجيلك يا ${esc(PV.me.name)}</div>
+      <div class="status" style="font-size:16px">انتظر، المقدم بيوزّع الفرق الحين…</div>
+      <button style="margin-top:16px" onclick="pEdit()">تعديل الاسم</button></div>`;
+    return;
+  }
+  if (pLastTeam !== PV.me.team) {
+    // كشف الفريق بعد التوزيع
+    const first = pLastTeam === null && body.dataset.mode === 'wait';
+    pLastTeam = PV.me.team;
+    if (first) { pReveal = Date.now(); try { navigator.vibrate && navigator.vibrate([80, 60, 120]); } catch(x){} }
+  }
+  if (Date.now() - pReveal < 3500) {
+    const tc = T[PV.me.team];
+    body.dataset.mode = 'reveal';
+    body.innerHTML = `<div class="preveal" style="background:${tc.color};color:${inkFor(tc.color)}"><div style="font-size:22px;font-weight:700">${esc(PV.me.name)}، فريقك هو</div>
+      <div style="font-size:44px;font-weight:900;margin-top:8px">${esc(tc.name)}</div><div style="font-size:60px">🎉</div></div>`;
+    clearTimeout(pRevealT); pRevealT = setTimeout(renderPlayer, 3600 - (Date.now() - pReveal));
     return;
   }
   body.dataset.mode = 'main';
@@ -5113,6 +5172,7 @@ if (VIEW === 'screen') { startHub(); setInterval(pingHost, 2000); setInterval(()
 if (VIEW === 'host') {
   setInterval(renderHubInfo, 2000);
   $('hAns').onchange = e => act('set', 'firstSec', Math.min(60, Math.max(2, +e.target.value || 5)));
+  ['jmPick', 'jmAuto'].forEach(id => $(id).onchange = e => { if (e.target.checked) act('set', 'joinMode', e.target.value); });
   $('hTurn').onchange = e => act('set', 'turnSec', Math.min(90, Math.max(3, +e.target.value || 10)));
   $('hAutoBuzz').onchange = e => act('set', 'autoBuzz', e.target.checked);
   $('hMiniQR').onchange = e => act('set', 'miniQR', e.target.checked);
