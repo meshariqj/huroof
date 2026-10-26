@@ -253,6 +253,7 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
         <button class="big bT2" id="bG" onclick="act('award','g')"></button>
         <button class="big" id="bT" onclick="act('timer')">⏱ المؤقت <span class="kbd">T</span></button>
         <button class="big bY" id="bA" onclick="act('reveal')">👁 أظهر الإجابة <span class="kbd">A</span></button>
+        <button class="big" id="bQ" onclick="act('showQ')" style="grid-column:1/-1;background:#2d5fa8">📺 أظهر السؤال على الشاشة <span class="kbd">Q</span></button>
         <button class="big" id="bN" onclick="act('next')">↻ سؤال آخر <span class="kbd">N</span></button>
         <button class="big" id="bC" onclick="act('close')">✕ إغلاق <span class="kbd">Esc</span></button>
       </div>
@@ -4558,7 +4559,7 @@ function winPath(t){
   }
   return null;
 }
-function setQ(c, p){ Object.assign(c, {q:p.q, a:p.a, cat:p.c, d:p.d, k:p.k, relaxed:p.relaxed, show:false, timerEnd:S.autoTimer ? Date.now() + S.timerSec * 1000 : null,
+function setQ(c, p){ Object.assign(c, {q:p.q, a:p.a, cat:p.c, d:p.d, k:p.k, relaxed:p.relaxed, show:false, showQ:false, timerEnd:S.autoTimer ? Date.now() + S.timerSec * 1000 : null,
   buzzOpen:S.autoBuzz !== false, buzz:null, turn:null}); }
 const other = t => t === 'r' ? 'g' : 'r';
 const isMuted = pid => { const p = S.players && S.players[pid]; return !!p && p.muteUntil != null && p.muteUntil >= (S.qSeq || 0); };
@@ -4617,6 +4618,7 @@ function act(type, a, b){
     case 'tokens': S.tokens[a] = Math.max(0, (S.tokens[a] || 0) + b); break;
     case 'next': if (!c) return; setQ(c, pickQuestion(c.letter, c.k, a)); break;
     case 'reveal': if (!c) return; c.show = !c.show; break;
+    case 'showQ': if (!c) return; c.showQ = !c.showQ; break;
     case 'timer': if (!c) return; c.timerEnd = Date.now() + S.timerSec * 1000; break;
     case 'close': S.cur = null; break;
     case 'undo':
@@ -4736,7 +4738,7 @@ function renderScreen(t, c){
   } else if (c) {
     ov.classList.add('hidden'); ov.classList.remove('full'); ov.dataset.k = '';
     const mutedNames = Object.entries(S.players || {}).filter(([id]) => isMuted(id)).map(([, p]) => p.name);
-    const key = [c.i, c.k, c.show, S.showQ, c.timerEnd, c.buzzOpen, JSON.stringify(c.turn), mutedNames.join(',')].join('|');
+    const key = [c.i, c.k, c.show, S.showQ, c.showQ, c.timerEnd, c.buzzOpen, JSON.stringify(c.turn), mutedNames.join(',')].join('|');
     const bn = $('sBanner');
     if (prevQ !== key) {
       if (c.turn && (!prevTurn || prevTurn.n !== c.turn.n || prevTurn.end !== c.turn.end)) { if (c.turn.n === 1) { tone(880, .12); tone(1320, .25, .1); } else { tone(200, .35, 0, 'square', .15); } }
@@ -4744,7 +4746,7 @@ function renderScreen(t, c){
       bn.innerHTML = `${buzzBar(c, 'bcd')}
         ${c.buzzOpen ? `<div class="openbadge">🔔 الضغط مفتوح، أسرع واحد يضغط!</div>` : ''}
         ${c.timerEnd ? `<div class="openbadge" style="border-color:var(--sel);color:var(--sel);animation:none">⏱ <b id="tnum"></b></div>` : ''}
-        ${S.showQ ? `<div class="bq">${esc(c.q)}</div>` : ''}
+        ${S.showQ || c.showQ ? `<div class="bq">${esc(c.q)}</div>` : ''}
         ${c.show ? `<div class="qans">${esc(c.a)}</div>` : ''}
         ${mutedNames.length ? `<div class="muted-note">🤫 مسكَّت: ${mutedNames.map(esc).join('، ')}</div>` : ''}`;
       prevQ = key;
@@ -4785,7 +4787,9 @@ function renderHost(t, c){
            <div class="lab" style="margin-top:10px">السؤال</div><div class="q">${esc(c.q)}</div>
            <div class="lab" style="margin-top:8px">الإجابة ${c.show ? '(ظاهرة للجمهور 👁)' : '(مخفية عن الجمهور)'}</div><div class="a">${esc(c.a)}</div>`
     : `<div class="empty">بانتظار اختيار حرف…</div>`);
-  ['bR','bG','bT','bA','bN','bC','bO'].forEach(id => $(id).disabled = !c);
+  ['bR','bG','bT','bA','bN','bC','bO','bQ'].forEach(id => $(id).disabled = !c);
+  if (S.showQ) { $('bQ').disabled = true; $('bQ').textContent = '📺 السؤال ظاهر دائمًا (من الإعدادات)'; }
+  else $('bQ').innerHTML = (c && c.showQ ? '🙈 أخفِ السؤال عن الشاشة' : '📺 أظهر السؤال على الشاشة') + ' <span class="kbd">Q</span>';
   $('bW').disabled = !(c && c.turn);
   $('bW').innerHTML = c && c.turn ? `✗ خطأ ← الدور: ${esc(S.teams[other(c.turn.team)].name)} <span class="kbd">X</span>` : `✗ خطأ ← الدور للفريق الثاني <span class="kbd">X</span>`;
   renderPlayersPanel();
@@ -5105,7 +5109,7 @@ if (VIEW === 'host') {
   document.addEventListener('keydown', e => {
     if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
     const map = {'1':['award','r'], '2':['award','g'], 'a':['reveal'], 'ش':['reveal'], 'n':['next'], 'ى':['next'], 't':['timer'], 'ف':['timer'], 'escape':['close'],
-      'x':['wrong'], 'ء':['wrong'], 'b':['openBuzz'], 'لا':['openBuzz']};
+      'q':['showQ'], 'ض':['showQ'], 'x':['wrong'], 'ء':['wrong'], 'b':['openBuzz'], 'لا':['openBuzz']};
     const m = map[e.key.toLowerCase()];
     if (m) { e.preventDefault(); act(...m); }
   });
