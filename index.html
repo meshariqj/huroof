@@ -250,8 +250,9 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
     <div class="box">
       <div class="hq" id="hQ"></div>
       <div class="acts">
-        <button class="big bT1" id="bR" onclick="act('award','r')"></button>
-        <button class="big bT2" id="bG" onclick="act('award','g')"></button>
+        <button class="big" id="bOK" onclick="act('correct')" style="background:#1f8a4c;font-size:22px">✓ إجابة صحيحة <span class="kbd">1</span></button>
+        <button class="big" id="bW" onclick="act('wrong')" style="background:#a3283a;font-size:22px">✗ إجابة خاطئة <span class="kbd">X</span></button>
+        <div class="status" id="hTurnInfo" style="grid-column:1/-1;text-align:center;font-size:14px"></div>
         <button class="big" id="bT" onclick="act('timer')">⏱ المؤقت <span class="kbd">T</span></button>
         <button class="big bY" id="bA" onclick="act('reveal')">👁 أظهر الإجابة <span class="kbd">A</span></button>
         <button class="big" id="bQ" onclick="act('showQ')" style="grid-column:1/-1;background:#2d5fa8">📺 أظهر السؤال على الشاشة <span class="kbd">Q</span></button>
@@ -259,9 +260,10 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
         <button class="big" id="bC" onclick="act('close')">✕ إغلاق <span class="kbd">Esc</span></button>
       </div>
       <div class="acts" id="buzzActs">
-        <button class="big" id="bW" onclick="act('wrong')" style="background:#8b2635">✗ خطأ ← الدور للفريق الثاني <span class="kbd">X</span></button>
-        <button class="big" id="bO" onclick="act('openBuzz')">🔔 افتح الضغط للكل <span class="kbd">B</span></button>
+        <button class="big" id="bO" onclick="act('openBuzz')" style="grid-column:1/-1">🔔 افتح الضغط للكل <span class="kbd">B</span></button>
       </div>
+      <div class="dsw"><span class="lab status">تصحيح يدوي (احسبها لفريق معيّن):</span>
+        <button class="bT1" id="bR" onclick="act('award','r')"></button><button class="bT2" id="bG" onclick="act('award','g')"></button></div>
       <div class="dsw" id="dsw"><span class="lab status">غيّر الصعوبة:</span>
         <button onclick="act('next',1)">سهل ★</button><button onclick="act('next',2)">متوسط ★★</button><button onclick="act('next',3)">صعب ★★★</button></div>
     </div>
@@ -4754,6 +4756,8 @@ function winPath(t){
 function setQ(c, p){ Object.assign(c, {q:p.q, a:p.a, cat:p.c, d:p.d, k:p.k, relaxed:p.relaxed, repeat:p.repeat, hadBuzz:false, show:false, showQ:false, timerEnd:S.autoTimer ? Date.now() + S.timerSec * 1000 : null,
   buzzOpen:S.autoBuzz !== false, buzz:null, turn:null}); }
 const other = t => t === 'r' ? 'g' : 'r';
+// الفريق اللي عليه الإجابة الحين: صاحب أول ضغطة، أو الفريق اللي انتقل له الدور وضغط واحد منهم
+const answeringTeam = c => !c || !c.turn ? null : c.turn.n === 1 ? (c.buzz && c.buzz.team) : (c.turn.who ? c.turn.team : null);
 const isMuted = pid => { const p = S.players && S.players[pid]; return !!p && p.muteUntil != null && p.muteUntil >= (S.qSeq || 0); };
 const teamPlayers = t => Object.entries(S.players || {}).filter(([, p]) => p.team === t);
 const waitingPlayers = () => Object.entries(S.players || {}).filter(([, p]) => !p.team);
@@ -4795,6 +4799,7 @@ function act(type, a, b){
       c.turn = {team:pl.team, end:now + secs * 1000, n:1};
       break;
     }
+    case 'correct': { const tm = answeringTeam(c); if (!tm) return; return act('award', tm); }
     case 'wrong':
       if (!c || !c.turn) return;
       c.turn = {team:other(c.turn.team), end:now + (S.turnSec || 10) * 1000, n:c.turn.n + 1, who:null};
@@ -5001,8 +5006,8 @@ function buzzBar(c, cdId){
 function renderHost(t, c){
   $('hN1').textContent = t.r.name; $('hN2').textContent = t.g.name;
   $('hS1').textContent = t.r.score; $('hS2').textContent = t.g.score;
-  $('bR').innerHTML = `✓ ${esc(t.r.name)} <span class="kbd">1</span>`;
-  $('bG').innerHTML = `✓ ${esc(t.g.name)} <span class="kbd">2</span>`;
+  $('bR').textContent = `✓ ${t.r.name}`;
+  $('bG').textContent = `✓ ${t.g.name}`;
   drawBoard($('hBoard')); animatedSeq = S.capSeq;
   $('hQ').innerHTML = (c && c.turn ? buzzBar(c, 'hbcd').replace('buzzbar', 'hbuzz') : c && c.buzzOpen ? `<div class="hbuzz open">🔔 الضغط مفتوح للاعبين</div>` : '') + (S.winner ? `<div class="empty">🏆 فاز ${esc(t[S.winner].name)}<br>اضغط «جولة جديدة»</div>`
     : c ? `<div class="row" style="justify-content:space-between"><div class="row"><div class="hl">${esc(c.letter)}</div>${chips(c)}</div><b id="htnum" style="font-size:22px"></b></div>
@@ -5014,8 +5019,10 @@ function renderHost(t, c){
   ['bR','bG','bT','bA','bN','bC','bO','bQ'].forEach(id => $(id).disabled = !c);
   if (S.showQ) { $('bQ').disabled = true; $('bQ').textContent = '📺 السؤال ظاهر دائمًا (من الإعدادات)'; }
   else $('bQ').innerHTML = (c && c.showQ ? '🙈 أخفِ السؤال عن الشاشة' : '📺 أظهر السؤال على الشاشة') + ' <span class="kbd">Q</span>';
-  $('bW').disabled = !(c && c.turn);
-  $('bW').innerHTML = c && c.turn ? `✗ خطأ ← الدور: ${esc(S.teams[other(c.turn.team)].name)} <span class="kbd">X</span>` : `✗ خطأ ← الدور للفريق الثاني <span class="kbd">X</span>`;
+  const ans = answeringTeam(c);
+  $('bW').disabled = !(c && c.turn); $('bOK').disabled = !ans;
+  $('hTurnInfo').innerHTML = !c ? '' : ans ? `✓ الصح يُحسب إلى: <b>${esc(S.teams[ans].name)}</b> &nbsp;·&nbsp; ✗ الخطأ ينقل الدور إلى: <b>${esc(S.teams[other(ans)].name)}</b>`
+    : c.turn ? `بانتظار لاعب من ${esc(S.teams[c.turn.team].name)} يضغط` : 'بانتظار أول ضغطة…';
   renderPlayersPanel();
   $('dsw').style.visibility = c ? 'visible' : 'hidden';
   renderHubInfo();
@@ -5380,7 +5387,7 @@ if (VIEW === 'host') {
   loadBankText();
   document.addEventListener('keydown', e => {
     if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
-    const map = {'1':['award','r'], '2':['award','g'], 'a':['reveal'], 'ش':['reveal'], 'n':['next'], 'ى':['next'], 't':['timer'], 'ف':['timer'], 'escape':['close'],
+    const map = {'1':['correct'], 'enter':['correct'], 'a':['reveal'], 'ش':['reveal'], 'n':['next'], 'ى':['next'], 't':['timer'], 'ف':['timer'], 'escape':['close'],
       'q':['showQ'], 'ض':['showQ'], 'x':['wrong'], 'ء':['wrong'], 'b':['openBuzz'], 'لا':['openBuzz']};
     const m = map[e.key.toLowerCase()];
     if (m) { e.preventDefault(); act(...m); }
