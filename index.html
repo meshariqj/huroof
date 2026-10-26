@@ -214,6 +214,16 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
 .pbig.me{filter:none!important;border-color:var(--gold);box-shadow:0 0 0 10px rgba(255,216,77,.35),0 14px 0 rgba(0,0,0,.35)}
 .pmsg{font-size:22px;font-weight:800;min-height:1.6em}
 .pcd{font-size:56px;font-weight:900;line-height:1}
+.gate{max-width:640px;margin:0 auto;padding:30px 16px;display:grid;gap:16px;text-align:center}
+.gcard{text-align:right;display:grid;gap:10px}
+.gcard h2{margin:0;font-size:22px}
+.srules{position:fixed;inset:0;z-index:35;background:rgba(5,8,25,.93);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:3vh 4vw}
+.srules .card{width:min(1400px,100%);max-height:94vh;overflow:hidden;background:linear-gradient(180deg,#1c2660,#121a45);border:3px solid var(--gold);border-radius:30px;padding:clamp(20px,3vw,44px);
+  display:grid;grid-template-columns:1fr 1fr;gap:clamp(16px,2.5vw,40px);text-align:right;animation:pop .4s}
+.srules h3{margin:0 0 10px;color:var(--gold);font-size:clamp(22px,2.4vw,40px)}
+.srules ol,.srules ul{margin:0 0 16px;padding-inline-start:1.2em;font-size:clamp(15px,1.45vw,26px);line-height:1.6}
+.srules .tm,.prules .tm{display:inline-block;padding:0 10px;border-radius:10px;font-weight:800}
+.srules .ttl{grid-column:1/-1;text-align:center;font-family:Lalezar,Cairo;font-size:clamp(34px,4vw,70px);color:var(--gold);line-height:1}
 .rstat{background:rgba(62,224,143,.12);border:1px solid #3ee08f;color:#9ff5c8;border-radius:12px;padding:8px 14px;font-weight:700;text-align:center}
 .rstat.bad{background:rgba(255,190,85,.12);border-color:#ffbe55;color:#ffd38a}
 .hostmenu{position:fixed;bottom:52px;right:10px;z-index:6;display:grid;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
@@ -241,12 +251,7 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
     <div class="team t2"><div class="sc" id="sS2">0</div><div class="nm" style="text-align:left"><b id="sN2"></b><span>يوصّل فوق وتحت ↕</span><div class="meta" id="sM2" style="justify-content:flex-end"></div></div></div>
   </div>
   <div class="boardwrap"><svg id="sBoard"></svg></div>
-  <button id="openHost" onclick="$('hostMenu').classList.toggle('hidden')">واجهة المقدم</button>
-  <div id="hostMenu" class="hostmenu hidden">
-    <button onclick="$('hostMenu').classList.add('hidden');openOther('host')">🖥 افتح واجهة المقدم في هذا الجهاز</button>
-    <button onclick="$('hostMenu').classList.add('hidden');showHostQR()">📱 تحكم من جهاز ثاني (باركود سري)</button>
-  </div>
-  <div id="hostQR" class="overlay hidden" style="z-index:40" onclick="this.classList.add('hidden')"></div>
+  <div id="sRules" class="srules hidden"></div>
   <div id="miniQR" class="miniqr hidden" onclick="act('set','showJoin',true)"></div>
   <div id="sToast" class="toast hidden"></div>
   <div id="sOverlay" class="overlay hidden"></div>
@@ -256,6 +261,20 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
 </div>
 
 <!-- ================= واجهة المقدم ================= -->
+<div id="gate" class="gate hidden">
+  <div class="plogo" style="font-size:64px">حروف<small style="font-size:20px">مع ابورد</small></div>
+  <div class="box gcard">
+    <h2>🖥 أبدأ لعبة من هذا الجهاز</h2>
+    <div class="status">هذا الجهاز هو اللي موصول بالشاشة أو التلفزيون. تنفتح شاشة العرض في نافذة، وتبقى واجهة المقدم هنا.</div>
+    <button class="big bY" onclick="enterLocal()">ابدأ من هذا الجهاز</button>
+  </div>
+  <div class="box gcard">
+    <h2>📱 أتحكم في لعبة شغالة على جهاز ثاني</h2>
+    <div class="status">على جهاز العرض افتح واجهة المقدم، وفي قسم «التحكم من جهاز ثاني» امسح الباركود السري بكاميرا جوالك. أو الصق الرابط السري هنا:</div>
+    <div class="row" style="margin-top:10px"><input id="gLink" placeholder="الصق الرابط السري" style="flex:1;direction:ltr;text-align:left"><button onclick="gateLink()">دخول</button></div>
+    <div class="warn" id="gErr"></div>
+  </div>
+</div>
 <div id="host" class="hidden">
   <div id="hRemote" class="rstat hidden"></div>
   <div class="box row">
@@ -300,7 +319,8 @@ textarea{width:100%;min-height:260px;direction:rtl;font-size:13px}
     <summary>📱 اللاعبين والانضمام</summary>
     <div class="row" style="margin-bottom:10px">
       <button id="hRulesBtn" onclick="act('rules',!S.showRules)"></button>
-      <span class="status">يظهر للاعبين في جوالاتهم: طريقة اللعب والقوانين والعقوبات.</span>
+      <button id="hRulesScrBtn" onclick="act('set','showRulesScreen',!S.showRulesScreen)"></button>
+      <span class="status">طريقة اللعب والقوانين والعقوبات: في جوالات اللاعبين، أو على شاشة العرض للجمهور.</span>
     </div>
     <div class="row">
       <button id="hJoinBtn" onclick="act('set','showJoin',!S.showJoin)"></button>
@@ -4710,7 +4730,7 @@ const DEFAULT_RULES = `الإجابة تكون من اللاعب اللي ضغط
 
 // ================= الحالة والمزامنة =================
 const QS = new URLSearchParams(location.search);
-const VIEW = QS.get('join') ? 'player' : (QS.get('host') || location.hash === '#host') ? 'host' : 'screen';
+const VIEW = QS.get('join') ? 'player' : location.hash === '#screen' ? 'screen' : 'host';
 const REMOTE = VIEW === 'host' && !!QS.get('host'); // واجهة المقدم من جهاز ثاني (تتصل بشاشة العرض عبر الإنترنت)
 let PEER_OPTS = {debug:0};
 try { const o = JSON.parse(localStorage.getItem('huroof_peer') || 'null'); if (o) PEER_OPTS = Object.assign(PEER_OPTS, o); } catch(e){}
@@ -4996,6 +5016,7 @@ function renderScreen(t, c){
       setTimeout(() => { if (ts.dataset.at == S.toast.at) ts.classList.add('hidden'); }, Math.max(500, 6000 - (Date.now() - S.toast.at))); }
   } else ts.classList.add('hidden');
   if (drawBoard($('sBoard'))) { animatedSeq = S.capSeq; if (!S.winner) chime(); }
+  renderScreenRules();
   const ov = $('sOverlay');
   const winKey = S.round + '-' + S.capSeq;
   if (S.winner && hiddenWin !== winKey) {
@@ -5353,6 +5374,8 @@ function renderPlayersPanel(){
   $('hJoinBtn').textContent = S.showJoin ? '✕ إخفاء شاشة الانضمام' : '📱 اعرض باركود الانضمام على الشاشة';
   $('hRulesBtn').textContent = S.showRules ? '✕ إخفاء القوانين عن اللاعبين' : '📜 اعرض القوانين للاعبين';
   $('hRulesBtn').style.background = S.showRules ? '#b8901c' : '';
+  $('hRulesScrBtn').textContent = S.showRulesScreen ? '✕ إخفاء القوانين عن الشاشة' : '🖥 اعرض القوانين على الشاشة';
+  $('hRulesScrBtn').style.background = S.showRulesScreen ? '#b8901c' : '';
   if (document.activeElement !== $('hRules')) $('hRules').value = S.rulesText || DEFAULT_RULES;
   const hu = hostUrl(), hq = $('hHostQR');
   if (S.room && S.hostKey) { if (hq.dataset.u !== hu) { hq.innerHTML = qrSvg(hu); hq.dataset.u = hu; } $('hHostUrl').textContent = hu; }
@@ -5402,15 +5425,11 @@ function pConnect(){
 function pSend(m){ if (pConn && pConn.open) { m.pid = pid; pConn.send(m); return true; } pStatus('مو متصل للحين', true); return false; }
 function pStatus(t, bad){ const el = $('pStat'); el.textContent = t; el.classList.toggle('bad', !!bad); }
 let pRulesClosed = null;
-function renderRules(){
-  const box = $('pRules'), r = PV && PV.rules;
-  if (!r || pRulesClosed === r.at) { box.classList.add('hidden'); box.dataset.k = ''; return; }
-  const T = PV.teams, key = JSON.stringify(r) + JSON.stringify(T);
-  if (box.dataset.k === key) return;
-  box.dataset.k = key;
+// نص القوانين (مشترك بين جوال اللاعب وشاشة العرض): [طريقة اللعب + الإسكات، القوانين والعقوبات]
+function rulesParts(r, T){
   const tm = k => `<span class="tm" style="background:${T[k].color};color:${inkFor(T[k].color)}">${esc(T[k].name)}</span>`;
   const rules = String(r.text || '').split('\n').map(x => x.trim()).filter(Boolean);
-  box.innerHTML = `<div class="card"><h3>🎮 طريقة اللعب</h3><ol>
+  return [`<div><h3>🎮 طريقة اللعب</h3><ol>
     <li>فريقين: ${tm('r')} يوصّل بين <b>اليمين واليسار</b>، و${tm('g')} يوصّل بين <b>فوق وتحت</b>.</li>
     <li>يُختار حرف من اللوحة، والمقدم يقول سؤال إجابته تبدأ بهذا الحرف.</li>
     <li>أول واحد يضغط الزر في جواله يجاوب، وعنده <b>${r.first} ثواني</b>.</li>
@@ -5418,9 +5437,29 @@ function renderRules(){
     <li>إذا خلص الوقت وما ضغط أحد، ينفتح الضغط للكل.</li>
     <li>الإجابة الصحيحة تكسب الفريق الحرف ويتلوّن بلونه.</li>
     <li>أول فريق يكمّل طريقه من طرف للطرف الثاني <b>يفوز بالجولة</b> 🏆</li></ol>
-    <h3>🤫 الإسكات</h3><ul><li>الفريق اللي يجاوب صح <b>مرتين ورا بعض</b> ياخذ إسكات، ويختار لاعب من الخصم يُمنع من الضغط سؤال كامل.</li></ul>
-    ${rules.length ? `<h3>📜 القوانين والعقوبات</h3><ul>${rules.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    <button onclick="pRulesClosed=${r.at};renderRules()">✓ فهمت</button></div>`;
+    <h3>🤫 الإسكات</h3><ul><li>الفريق اللي يجاوب صح <b>مرتين ورا بعض</b> ياخذ إسكات، ويختار لاعب من الخصم يُمنع من الضغط سؤال كامل.</li></ul></div>`,
+    rules.length ? `<div><h3>📜 القوانين والعقوبات</h3><ul>${rules.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''];
+}
+function renderScreenRules(){
+  const box = $('sRules');
+  if (!S.showRulesScreen) { box.classList.add('hidden'); box.dataset.k = ''; return; }
+  const r = {text:S.rulesText || DEFAULT_RULES, first:S.firstSec || 5, turn:S.turnSec || 10}, T = S.teams;
+  const key = JSON.stringify(r) + JSON.stringify(T);
+  if (box.dataset.k !== key) {
+    box.dataset.k = key;
+    const [play, penal] = rulesParts(r, T);
+    box.innerHTML = `<div class="card"><div class="ttl">قوانين اللعبة</div>${play}${penal || '<div></div>'}</div>`;
+  }
+  box.classList.remove('hidden');
+}
+function renderRules(){
+  const box = $('pRules'), r = PV && PV.rules;
+  if (!r || pRulesClosed === r.at) { box.classList.add('hidden'); box.dataset.k = ''; return; }
+  const T = PV.teams, key = JSON.stringify(r) + JSON.stringify(T);
+  if (box.dataset.k === key) return;
+  box.dataset.k = key;
+  const [play, penal] = rulesParts(r, T);
+  box.innerHTML = `<div class="card">${play}${penal}<button onclick="pRulesClosed=${r.at};renderRules()">✓ فهمت</button></div>`;
   box.classList.remove('hidden');
 }
 function renderPlayer(){
@@ -5516,9 +5555,26 @@ function showHostQR(){
   el.classList.remove('hidden');
 }
 
+// ================= بوابة واجهة المقدم =================
+function enterLocal(){
+  try { sessionStorage.setItem('huroof_local', '1'); } catch(e){}
+  $('gate').classList.add('hidden'); $('host').classList.remove('hidden');
+  if (Date.now() - lastScreen > 4000) openOther('screen');
+}
+function gateLink(){
+  const v = $('gLink').value.trim();
+  try { const u = new URL(v); if (u.searchParams.get('host') && u.searchParams.get('key')) { location.href = location.href.split('#')[0].split('?')[0] + '?host=' + encodeURIComponent(u.searchParams.get('host')) + '&key=' + encodeURIComponent(u.searchParams.get('key')); return; } } catch(e){}
+  $('gErr').textContent = 'الرابط غير صحيح. انسخ الرابط السري من قسم «التحكم من جهاز ثاني» في واجهة المقدم.';
+}
+
 // ================= التشغيل =================
 document.title = VIEW === 'host' ? 'حروف مع ابورد · المقدم' : VIEW === 'player' ? 'حروف مع ابورد · لاعب' : 'حروف مع ابورد';
-$(VIEW).classList.remove('hidden');
+let gated = false;
+try { gated = VIEW === 'host' && !REMOTE && !sessionStorage.getItem('huroof_local'); } catch(e){}
+if (gated) {
+  // نعطي شاشة العرض ثانيتين تعلن عن نفسها؛ إذا كانت مفتوحة في نفس المتصفح ندخل على طول بدون سؤال
+  setTimeout(() => { if (Date.now() - lastScreen < 4000) enterLocal(); else $('gate').classList.remove('hidden'); }, 1500);
+} else $(VIEW).classList.remove('hidden');
 if (VIEW !== 'player') $(VIEW === 'host' ? 'hBoard' : 'sBoard').addEventListener('click', onBoardClick);
 if (VIEW === 'screen') { startHub(); setInterval(pingHost, 2000); setInterval(() => { if (S.cur && S.cur.turn) pushPlayers(); }, 3000); }
 if (VIEW === 'host') {
